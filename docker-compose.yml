@@ -1,0 +1,67 @@
+version: '2.1'
+
+services:
+  data-processor:
+    container_name: 'data-processor-backend'
+    build: .
+    command: bash -c "mix deps.clean mime --build && mix deps.get && mix deps.compile && mix ecto.setup && mix phx.server"
+    ports:
+      - 4005:4000
+    volumes:
+      - ./:/opt/app
+      - ./scripts:/opt/spark-utils/scripts
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - data-processor-postgres
+    environment:
+      DATABASE_HOST: data-processor-postgres
+      SPARK_SCRIPTS_PATH: /opt/spark-utils/scripts
+      STRATEGY_TO_USE: docker
+      DATA_COLLECTOR_MONGO: data-collector-mongo
+
+  data-processor-postgres:
+    container_name: data-processor-postgres
+    image: 'postgres:10'
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_USER: 'postgres'
+      POSTGRES_PASSWORD: 'postgres'
+
+  master:
+    image: 'gettyimages/spark'
+    container_name: "master"
+    hostname: master
+    environment:
+      MASTER: spark://master:7077
+    volumes:
+      - ./scripts:/opt/spark-utils/scripts
+
+  worker:
+    image: gettyimages/spark
+    command: bin/spark-class org.apache.spark.deploy.worker.Worker spark://master:7077
+    container_name: worker
+    hostname: worker
+    environment:
+      SPARK_WORKER_CORES: 2
+      SPARK_WORKER_MEMORY: 1g
+      SPARK_WORKER_PORT: 8881
+      SPARK_WORKER_WEBUI_PORT: 8081
+    links:
+      - master
+    volumes:
+      - ./scripts:/opt/spark-utils/scripts
+
+  # kafka:
+  #   container_name: kafka
+  #   image: 'spotify/kafka'
+  #   ports:
+  #     - 9092:9092
+  #     - 2181:2181
+  #   environment:
+  #     ADVERTISED_HOST: 172.17.0.1
+
+networks:
+  default:
+    external:
+      name: platform
